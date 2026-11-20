@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; media-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Hub</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span><span>AI Hub</span></div>
+    <nav id="tabstrip" class="tabstrip" role="tablist" aria-label="Open pages">
+      <button type="button" role="tab" id="tab-home" class="tab home-tab" aria-selected="true" title="All your AIs (Alt+Home)"><span aria-hidden="true">⌂</span> Home</button>
+    </nav>
+    <div class="top-actions">
+      <button type="button" id="btn-smaller" class="icon-btn" title="Smaller text (Ctrl -)">A−</button>
+      <button type="button" id="btn-larger" class="icon-btn" title="Larger text (Ctrl +)">A+</button>
+      <button type="button" id="btn-theme" class="icon-btn" title="Switch light / dark">◐</button>
+      <button type="button" id="btn-settings" class="icon-btn" title="Settings (Ctrl ,)">⚙</button>
+    </div>
+  </header>
+
+  <div id="update-banner" class="update-banner" role="status" hidden>
+    <span id="update-text"></span>
+    <button type="button" id="btn-update-now" class="btn btn-small btn-primary">Restart now</button>
+    <button type="button" id="btn-update-later" class="btn btn-small">Later</button>
+  </div>
+
+  <main class="main">
+    <section id="home" class="home" aria-labelledby="home-title">
+      <div class="home-head">
+        <h1 id="home-title">Your AIs</h1>
+        <span id="scan-status" class="muted" role="status"></span>
+        <span class="spacer"></span>
+        <button type="button" id="btn-add" class="btn btn-primary">+ Add a tile</button>
+        <button type="button" id="btn-arrange" class="btn" aria-pressed="false">Arrange tiles</button>
+        <button type="button" id="btn-rescan" class="btn" title="Look for AI programs on this PC again">↻ Find programs</button>
+      </div>
+      <p id="arrange-hint" class="hint" hidden>Drag tiles to move them, or use the arrow buttons. Press <b>Done</b> when finished.</p>
+      <div id="tiles" class="tiles" role="list" aria-label="AI tiles"></div>
+      <div id="empty" class="empty" hidden>
+        <p>No AI tiles yet.</p>
+        <p>Press <b>+ Add a tile</b> to add a web AI such as ChatGPT, or a program on this PC.</p>
+      </div>
+    </section>
+
+    <section id="web" class="web" hidden>
+      <div class="web-bar">
+        <button type="button" id="web-back" class="icon-btn" title="Back (Alt ←)" aria-label="Back">◀</button>
+        <button type="button" id="web-forward" class="icon-btn" title="Forward (Alt →)" aria-label="Forward">▶</button>
+        <button type="button" id="web-reload" class="icon-btn" title="Reload (F5)" aria-label="Reload">↻</button>
+        <button type="button" id="web-start" class="icon-btn" title="Go to this AI's start page" aria-label="Start page">⌂</button>
+        <span id="web-host" class="web-host"></span>
+        <span class="spacer"></span>
+        <span class="zoom" aria-label="Page size">
+          <button type="button" id="web-zoom-out" class="icon-btn" title="Smaller page (Ctrl -)" aria-label="Smaller page">−</button>
+          <button type="button" id="web-zoom-reset" class="btn btn-small" title="Normal size (Ctrl 0)"><span id="web-zoom">100%</span></button>
+          <button type="button" id="web-zoom-in" class="icon-btn" title="Larger page (Ctrl +)" aria-label="Larger page">+</button>
+        </span>
+        <button type="button" id="web-external" class="btn btn-small" title="Open this page in your normal browser">Open in browser ↗</button>
+        <button type="button" id="web-close" class="btn btn-small" title="Close this tab (Ctrl W)">Close tab ✕</button>
+      </div>
+      <div id="web-area" class="web-area" aria-label="Web page">
+        <p class="web-loading muted">Loading…</p>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="add" class="dialog wide" aria-labelledby="add-title">
+    <form method="dialog" class="dialog-inner">
+      <header class="dialog-head"><h2 id="add-title">Add a tile</h2><button type="submit" class="icon-btn" aria-label="Close">✕</button></header>
+      <div class="dialog-body">
+        <h3>Web AIs</h3>
+        <p class="muted small">One click adds a tile. It opens in a tab here, signed in, unless you choose your browser in Settings.</p>
+        <div id="web-presets" class="presets"></div>
+        <h3>Another web address</h3>
+        <div class="row">
+          <label class="field">Name <input id="add-web-name" type="text" maxlength="60" placeholder="For example: Open WebUI"></label>
+          <label class="field grow">Address <input id="add-web-url" type="text" maxlength="2000" placeholder="https://… or http://localhost:8080" spellcheck="false"></label>
+          <button type="button" id="btn-add-web" class="btn btn-primary">Add</button>
+        </div>
+        <p id="add-web-error" class="error" role="alert" hidden></p>
+        <h3>A program on this PC</h3>
+        <p class="muted small">AI programs are found automatically. Use this for anything that was missed.</p>
+        <button type="button" id="btn-add-program" class="btn">Choose a program…</button>
+        <div id="hidden-section" hidden>
+          <h3>Removed programs</h3>
+          <p class="muted small">Programs found on this PC whose tiles you removed. Press one to bring its tile back.</p>
+          <div id="hidden-list" class="presets"></div>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="rename" class="dialog" aria-labelledby="rename-title">
+    <form method="dialog" class="dialog-inner" id="rename-form">
+      <header class="dialog-head"><h2 id="rename-title">Rename tile</h2></header>
+      <div class="dialog-body">
+        <label class="field">New name <input id="rename-input" type="text" maxlength="60"></label>
+        <p class="muted small">Leave it empty to go back to <span id="rename-original"></span>.</p>
+      </div>
+      <footer class="dialog-foot">
+        <button type="button" id="rename-cancel" class="btn">Cancel</button>
+        <button type="submit" id="rename-save" class="btn btn-primary" value="save">Save</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="confirm" class="dialog" aria-labelledby="confirm-title">
+    <form method="dialog" class="dialog-inner">
+      <header class="dialog-head"><h2 id="confirm-title">Are you sure?</h2></header>
+      <div class="dialog-body"><p id="confirm-text"></p></div>
+      <footer class="dialog-foot">
+        <button type="submit" class="btn" value="cancel">Cancel</button>
+        <button type="submit" id="confirm-ok" class="btn btn-danger" value="ok">OK</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="settings" class="dialog wide" aria-labelledby="settings-title">
+    <form method="dialog" class="dialog-inner">
+      <header class="dialog-head"><h2 id="settings-title">Settings</h2><button type="submit" class="icon-btn" aria-label="Close">✕</button></header>
+      <div class="dialog-body">
+        <h3>Appearance</h3>
+        <div class="row">
+          <label class="field">Theme
+            <select id="set-theme"><option value="system">Same as Windows</option><option value="light">Light</option><option value="dark">Dark</option></select>
+          </label>
+          <label class="field">Text size
+            <select id="set-font">
+              <option value="16">Small (16)</option><option value="18">Normal (18)</option><option value="20">Large (20)</option><option value="22">Larger (22)</option><option value="24">Largest (24)</option><option value="28">Huge (28)</option>
+            </select>
+          </label>
+          <label class="field">Tile size
+            <select id="set-tiles"><option value="large">Large</option><option value="xlarge">Extra large</option></select>
+          </label>
+        </div>
+
+        <h3>Web AIs</h3>
+        <div class="radio-list" role="radiogroup" aria-label="Where web AIs open">
+          <label><input type="radio" name="openWeb" value="hub"> <span><b>In tabs inside AI Hub</b> (recommended). You stay signed in, separately from your normal browser.</span></label>
+          <label><input type="radio" name="openWeb" value="browser"> <span><b>In my normal browser</b>, using its sign-ins.</span></label>
+        </div>
+        <p class="muted small">Right-click any web tile to choose for that one time.</p>
+        <button type="button" id="btn-signout" class="btn btn-danger">Sign out of all web AIs in AI Hub…</button>
+
+        <h3>Programs</h3>
+        <label class="check"><input type="checkbox" id="set-cli"> Show command-line AIs (Claude Code, Codex …). They open in a terminal window.</label>
+
+        <h3>Start-up</h3>
+        <label class="check"><input type="checkbox" id="set-startup"> Start AI Hub when I sign in to Windows (it waits in the system tray by the clock)</label>
+        <label class="check"><input type="checkbox" id="set-tray"> Closing the window keeps AI Hub running in the system tray</label>
+        <p id="startup-note" class="muted small" hidden>Start-up is only set for the installed app, not when AI Hub is run from its source code.</p>
+
+        <h3>Updates</h3>
+        <label class="check"><input type="checkbox" id="set-update"> Check for updates automatically (contacts github.com only)</label>
+        <div class="row"><button type="button" id="btn-check-update" class="btn">Check for updates now</button><span id="update-status" class="muted small"></span></div>
+
+        <h3>About</h3>
+        <p class="small">AI Hub <span id="about-version"></span>. Settings and tiles are kept on this PC in <button type="button" id="btn-data-folder" class="linkish">your AI Hub data folder</button>.</p>
+        <p class="small muted">Web AIs: sign-ins are saved in AI Hub's own web profile. Nothing is sent anywhere by AI Hub itself except update checks.</p>
+        <button type="button" id="btn-quit" class="btn">Quit AI Hub</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden><span id="toast-text"></span><button type="button" id="toast-action" class="btn btn-small" hidden></button></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

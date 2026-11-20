@@ -1,0 +1,133 @@
+name: Desktop Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      # Microsoft Artifact Signing: names are repository variables, the Azure login is secret.
+      ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+      ARTIFACT_SIGNING_ACCOUNT: ${{ vars.ARTIFACT_SIGNING_ACCOUNT }}
+      ARTIFACT_SIGNING_PROFILE: ${{ vars.ARTIFACT_SIGNING_PROFILE }}
+      ARTIFACT_SIGNING_PUBLISHER: ${{ vars.ARTIFACT_SIGNING_PUBLISHER }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Detect signing configuration
+        id: signing
+        shell: pwsh
+        run: |
+          # Same order as electron-builder.config.js: Artifact Signing, then a certificate file, else unsigned.
+          $artifact = $env:ARTIFACT_SIGNING_ENDPOINT -and $env:ARTIFACT_SIGNING_ACCOUNT -and $env:ARTIFACT_SIGNING_PROFILE -and $env:ARTIFACT_SIGNING_PUBLISHER
+          if ($artifact) {
+            if (-not ($env:AZURE_TENANT_ID -and $env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_SECRET)) { throw "Artifact Signing variables are set but the AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET secrets are missing." }
+            "enabled=true" >> $env:GITHUB_OUTPUT
+            Write-Host "Microsoft Artifact Signing is configured. The release will be signed."
+            exit 0
+          }
+          if ($env:CSC_LINK -and $env:CSC_KEY_PASSWORD) {
+            "enabled=true" >> $env:GITHUB_OUTPUT
+            Write-Host "A code-signing certificate is configured. The release will be signed."
+            exit 0
+          }
+          "enabled=false" >> $env:GITHUB_OUTPUT
+          Write-Warning "No code signing is configured (see docs/code-signing.md). The release will be built unsigned."
+
+      - name: Validate tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} does not match package.json version $version." }
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+      # One draft release is created here, before anything is built. electron-builder uploads every
+      # file into it (two targets creating releases at once made duplicates), and the last step
+      # publishes it, so nobody sees a half-uploaded release.
+      - name: Create draft release
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          gh release view "v$version" --repo $env:GITHUB_REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) { throw "A release for v$version already exists. Delete it (or bump the version) before releasing again." }
+          gh release create "v$version" --repo $env:GITHUB_REPOSITORY --draft --verify-tag --title "AI Hub v$version" --notes "Building…"
+
+      - name: Build desktop release and upload assets
+        run: npm run publish:win
+
+      - name: Note unsigned release fallback
+        if: steps.signing.outputs.enabled != 'true'
+        shell: pwsh
+        run: Write-Host "Release assets were built without Windows code signing because neither Artifact Signing nor a certificate is configured (see docs/code-signing.md)."
+
+      - name: Generate release notes
+        shell: pwsh
+        run: node scripts/render-release-notes.mjs --out release-notes.md
+
+      - name: Ensure portable asset is attached
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          gh release upload "v$version" "release/AI-Hub-Portable-$version-x64.exe" --repo $env:GITHUB_REPOSITORY --clobber
+
+      - name: Check every file is attached, then publish the release
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $names = gh release view "v$version" --repo $env:GITHUB_REPOSITORY --json assets -q '.assets[].name'
+          foreach ($need in @("AI-Hub-Setup-$version-x64.exe", "AI-Hub-Setup-$version-x64.exe.blockmap", "AI-Hub-Portable-$version-x64.exe", "latest.yml")) {
+            if ($names -notcontains $need) { throw "The release is missing $need; it stays a draft." }
+          }
+          gh release edit "v$version" --repo $env:GITHUB_REPOSITORY --title "AI Hub v$version" --notes-file release-notes.md --draft=false --latest
+
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts-release
+          path: test-results
+          if-no-files-found: ignore
